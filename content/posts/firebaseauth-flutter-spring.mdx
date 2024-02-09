@@ -1,0 +1,351 @@
+---
+title: Flutter + Springboot 로 Firebase Auth 제대로 쓰자
+description: Flutter Springboot + FirebaseAuth 인증 사용하기
+date: "2024-02-09"
+---
+
+Flutter 에서 Firebase 의 Authentication 서비스를 이용해, Spring boot 로 구현 된 API 서버와 함께 사용하는 방법을 알아보겠습니다.
+
+Firebase 인증으로 구현 된 앱에서 API 를 호출 할때, Bearer 토큰을 Authorization 헤더로 넘겨주어야 합니다.
+
+_요청예시_
+
+```http
+GET /me
+Authorization: Bearer {firebase id token}
+```
+
+만약 Dio 패키지를 사용 할 경우, dio 에서 제공하는 InterceptorsWrapper 를 이용해서 구현 할 수 있습니다
+
+```dart
+
+class FirebaseBearerInterceptor extends InterceptorsWrapper {
+  @override
+  void onRequest(
+      RequestOptions options, RequestInterceptorHandler handler) async {
+    if (FirebaseAuth.instance.currentUser != null) {
+      final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+      if (token != null) {
+        options.headers['Authorization'] = "Bearer $token";
+      }
+    }
+    return handler.next(options);
+  }
+}
+
+final dioClient = Dio(BaseOptions(baseUrl: baseUrl))
+      ..interceptors.addAll([
+        FirebaseBearerInterceptor(),
+      ]);
+```
+
+## Spring boot 로 API 서버 구현하기
+
+Spring boot 프로젝트를 생성합니다
+
+oauth2-resource-server, security, web 모듈이 필요합니다
+
+```dart
+dependencies {
+    implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
+    implementation("org.springframework.boot:spring-boot-starter-security")
+    implementation("org.springframework.boot:spring-boot-starter-web")
+    testImplementation("org.springframework.boot:spring-boot-starter-test")
+    testImplementation("org.springframework.security:spring-security-test")
+}
+```
+
+issuer-uri 를 Firebase 프로젝트 ID 로 설정합니다.
+
+spring.security.oauth2.resourceserver.jwt.issuer-uri=[https://securetoken.google.com/](https://securetoken.google.com/irept3)`<Firebase Project ID>`
+
+프로젝트 ID 는 Firebase Console 에 프로젝트 설정 > 일반 > 프로젝트 ID 섹션에서 찾을 수 있습니다.
+
+## API 구성
+
+이제 유저정보 조회 및 게시글 조회 하는 기능을 만들어 보겠습니다
+
+_MyAwesomeController.kt_
+
+```kotlin
+package org.example.myauthappapi
+
+import org.springframework.security.access.prepost.PreAuthorize
+import org.springframework.security.core.Authentication
+import org.springframework.web.bind.annotation.GetMapping
+import org.springframework.web.bind.annotation.RestController
+
+@RestController
+class MyAwesomeController {
+
+    @GetMapping(value = ["/me"])
+    fun me(authentication: Authentication): Authentication {
+        return authentication
+    }
+
+    @GetMapping(value = ["/post"])
+    fun post(): String {
+        return "my awesome post"
+    }
+}
+```
+
+이제 SecurityFilter 를 설정합니다.
+
+_SecurityConfig.kt_
+
+```kotlin
+package org.example.myauthappapi
+
+import org.springframework.context.annotation.Bean
+import org.springframework.context.annotation.Configuration
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
+import org.springframework.security.config.annotation.web.builders.HttpSecurity
+import org.springframework.security.web.DefaultSecurityFilterChain
+
+@EnableMethodSecurity
+@Configuration
+class SecurityConfig {
+
+    @Bean
+    fun securityFilterChain(http: HttpSecurity): DefaultSecurityFilterChain? {
+        http
+            .authorizeHttpRequests { auth ->
+                auth
+                    .requestMatchers("/me").authenticated()
+                    .anyRequest().permitAll()
+            }
+						// resource server 활성화
+            .oauth2ResourceServer { oauth -> oauth.jwt { } }
+        return http.build()
+    }
+}
+```
+
+이제 `/me` 와 `/post` 를 각각 호출 해보세요
+
+`/me` 는 401 오류가 나오면서 요청에 실패하는 걸 볼 수 있습니다
+
+```bash
+curl http://localhost:8080/post -i
+HTTP/1.1 200
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Content-Type: text/plain;charset=UTF-8
+Content-Length: 15
+Date: Thu, 08 Feb 2024 13:57:18 GMT
+```
+
+```shell
+curl http://localhost:8080/me -i
+HTTP/1.1 401
+Vary: Origin
+Vary: Access-Control-Request-Method
+Vary: Access-Control-Request-Headers
+Set-Cookie: JSESSIONID=3AA95483DCCF2EFCDC9A112A7678FCCB; Path=/; HttpOnly
+WWW-Authenticate: Bearer
+X-Content-Type-Options: nosniff
+X-XSS-Protection: 0
+Cache-Control: no-cache, no-store, max-age=0, must-revalidate
+Pragma: no-cache
+Expires: 0
+X-Frame-Options: DENY
+Content-Length: 0
+Date: Thu, 08 Feb 2024 14:14:56 GMT
+```
+
+## API 보호 테스트 해보기
+
+Firebase Console 에서 Signin method 의 email 을 활성화 하고, 테스트 계정을 생성하세요
+
+저는 test@email.com / 123456 으로 생성했습니다.
+
+![Untitled](/firebaseauth-flutter-spring-1.png)
+
+이제 idToken 을 받아오겠습니다.
+
+```bash
+curl -XPOST 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=[API_KEY]' \
+-H 'Content-Type: application/json' \
+-d '{
+    "email": "test@email.com",
+    "password": "123456",
+    "returnSecureToken": true
+}'
+```
+
+- API_KEY 는 Firebase Console 의 웹 API 키 입니다
+
+위처럼 호출하면 아래와 비슷하게 나오는 것을 확인 할 수 있습니다. idToken 항목을 복사 해 주세요
+
+```json
+{
+  "kind": "identitytoolkit#VerifyPasswordResponse",
+  "localId": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+  "email": "test@email.com",
+  "displayName": "",
+  "idToken": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjUzZWFiMDBhNzc5MTk3Yzc0MWQ2NjJmY2EzODE1OGJkN2JlNGEyY2MiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vbXlhdXRoYXBwLTJlYWFkIiwiYXVkIjoibXlhdXRoYXBwLTJlYWFkIiwiYXV0aF90aW1lIjoxNzA3NDAxNDE0LCJ1c2VyX2lkIjoiQW1VckRtajRWemdrSUtLNG0xS1FDSkxZamhnMiIsInN1YiI6IkFtVXJEbWo0Vnpna0lLSzRtMUtRQ0pMWWpoZzIiLCJpYXQiOjE3MDc0MDE0MTQsImV4cCI6MTcwNzQwNTAxNCwiZW1haWwiOiJ0ZXN0QGVtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJ0ZXN0QGVtYWlsLmNvbSJdfSwic2lnbl9pbl9wcm92aWRlciI6InBhc3N3b3JkIn19.f0zu6nYJrH3N84hcCxKSYt7M6v9g63o5tTHHDWITmZffmmw84yGdCvIImQlwU-MKIqe74IBxiFCSuFOMVMXzv7SYBP8FKE7IkWV6pyXhSuaihw-UCHVDgdpvwwx-EH2A5UuYrBOeKyP1Yb4S2Rcmlsv0AsjQ17ZwpB3qeXtck6ilLO0SnZgJrCVTI7H9LrrCOIFkShnYjVRwRWmlnqRMW00QW0PdyoSmDLpOFfdb170s6odNX3oNaOkaT3yLEDjHo3R61Muhn0Qafrg5lkwepFmTFngs7oJUgebw1kVC0mCbKuxeA2wsazFfwznfL7ARcW0Hix13Kt2FK6y7uAwzow",
+  "registered": true,
+  "refreshToken": "AMf-vBwEoz00YFO6K5EVurw4fmQiqyajScTkF_D1xoE7JDcXt_pIlPZTysq5FrXpr8ECDGYUs0tKpYS3a0omQWTYTfuAxn1ta3JZz_G9wN_e92sdbivM4GJ_BVpJIPyFfhwkwy3vTNItHVLLtAabrKzAAmx9LKcLugilj-WaXaNl5bEPdyVq8Hu9GMNIf56oNGUkyLjH3iMBJCM0anjJ86NilhIyuV5-NA",
+  "expiresIn": "3600"
+}
+```
+
+이제 idToken 을 우리 API 의 `/me` 를 호출 할 때, header 에 함께 보내보겠습니다.
+
+```bash
+curl http://localhost:8080/me \
+-H "Authorization: Bearer <idToken>" | jq ''
+```
+
+이제 정상적으로 응답 되는것을 확인 할 수 있습니다.
+
+```json
+{
+  "authorities": [],
+  "details": {
+    "remoteAddress": "127.0.0.1",
+    "sessionId": null
+  },
+  "authenticated": true,
+  "principal": {
+    "tokenValue": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjUzZWFiMDBhNzc5MTk3Yzc0MWQ2NjJmY2EzODE1OGJkN2JlNGEyY2MiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vbXlhdXRoYXBwLTJlYWFkIiwiYXVkIjoibXlhdXRoYXBwLTJlYWFkIiwiYXV0aF90aW1lIjoxNzA3NDAxNDE0LCJ1c2VyX2lkIjoiQW1VckRtajRWemdrSUtLNG0xS1FDSkxZamhnMiIsInN1YiI6IkFtVXJEbWo0Vnpna0lLSzRtMUtRQ0pMWWpoZzIiLCJpYXQiOjE3MDc0MDE0MTQsImV4cCI6MTcwNzQwNTAxNCwiZW1haWwiOiJ0ZXN0QGVtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJ0ZXN0QGVtYWlsLmNvbSJdfSwic2lnbl9pbl9wcm92aWRlciI6InBhc3N3b3JkIn19.f0zu6nYJrH3N84hcCxKSYt7M6v9g63o5tTHHDWITmZffmmw84yGdCvIImQlwU-MKIqe74IBxiFCSuFOMVMXzv7SYBP8FKE7IkWV6pyXhSuaihw-UCHVDgdpvwwx-EH2A5UuYrBOeKyP1Yb4S2Rcmlsv0AsjQ17ZwpB3qeXtck6ilLO0SnZgJrCVTI7H9LrrCOIFkShnYjVRwRWmlnqRMW00QW0PdyoSmDLpOFfdb170s6odNX3oNaOkaT3yLEDjHo3R61Muhn0Qafrg5lkwepFmTFngs7oJUgebw1kVC0mCbKuxeA2wsazFfwznfL7ARcW0Hix13Kt2FK6y7uAwzow",
+    "issuedAt": "2024-02-08T14:10:14Z",
+    "expiresAt": "2024-02-08T15:10:14Z",
+    "headers": {
+      "kid": "53eab00a779197c741d662fca38158bd7be4a2cc",
+      "typ": "JWT",
+      "alg": "RS256"
+    },
+    "claims": {
+      "aud": ["myauthapp-2eaad"],
+      "sub": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+      "email_verified": false,
+      "user_id": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+      "auth_time": 1707401414,
+      "iss": "https://securetoken.google.com/myauthapp-2eaad",
+      "exp": "2024-02-08T15:10:14Z",
+      "firebase": {
+        "identities": {
+          "email": ["test@email.com"]
+        },
+        "sign_in_provider": "password"
+      },
+      "iat": "2024-02-08T14:10:14Z",
+      "email": "test@email.com"
+    },
+    "subject": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+    "id": null,
+    "audience": ["myauthapp-2eaad"],
+    "notBefore": null,
+    "issuer": "https://securetoken.google.com/myauthapp-2eaad"
+  },
+  "credentials": {
+    "tokenValue": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjUzZWFiMDBhNzc5MTk3Yzc0MWQ2NjJmY2EzODE1OGJkN2JlNGEyY2MiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vbXlhdXRoYXBwLTJlYWFkIiwiYXVkIjoibXlhdXRoYXBwLTJlYWFkIiwiYXV0aF90aW1lIjoxNzA3NDAxNDE0LCJ1c2VyX2lkIjoiQW1VckRtajRWemdrSUtLNG0xS1FDSkxZamhnMiIsInN1YiI6IkFtVXJEbWo0Vnpna0lLSzRtMUtRQ0pMWWpoZzIiLCJpYXQiOjE3MDc0MDE0MTQsImV4cCI6MTcwNzQwNTAxNCwiZW1haWwiOiJ0ZXN0QGVtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJ0ZXN0QGVtYWlsLmNvbSJdfSwic2lnbl9pbl9wcm92aWRlciI6InBhc3N3b3JkIn19.f0zu6nYJrH3N84hcCxKSYt7M6v9g63o5tTHHDWITmZffmmw84yGdCvIImQlwU-MKIqe74IBxiFCSuFOMVMXzv7SYBP8FKE7IkWV6pyXhSuaihw-UCHVDgdpvwwx-EH2A5UuYrBOeKyP1Yb4S2Rcmlsv0AsjQ17ZwpB3qeXtck6ilLO0SnZgJrCVTI7H9LrrCOIFkShnYjVRwRWmlnqRMW00QW0PdyoSmDLpOFfdb170s6odNX3oNaOkaT3yLEDjHo3R61Muhn0Qafrg5lkwepFmTFngs7oJUgebw1kVC0mCbKuxeA2wsazFfwznfL7ARcW0Hix13Kt2FK6y7uAwzow",
+    "issuedAt": "2024-02-08T14:10:14Z",
+    "expiresAt": "2024-02-08T15:10:14Z",
+    "headers": {
+      "kid": "53eab00a779197c741d662fca38158bd7be4a2cc",
+      "typ": "JWT",
+      "alg": "RS256"
+    },
+    "claims": {
+      "aud": ["myauthapp-2eaad"],
+      "sub": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+      "email_verified": false,
+      "user_id": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+      "auth_time": 1707401414,
+      "iss": "https://securetoken.google.com/myauthapp-2eaad",
+      "exp": "2024-02-08T15:10:14Z",
+      "firebase": {
+        "identities": {
+          "email": ["test@email.com"]
+        },
+        "sign_in_provider": "password"
+      },
+      "iat": "2024-02-08T14:10:14Z",
+      "email": "test@email.com"
+    },
+    "subject": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+    "id": null,
+    "audience": ["myauthapp-2eaad"],
+    "notBefore": null,
+    "issuer": "https://securetoken.google.com/myauthapp-2eaad"
+  },
+  "token": {
+    "tokenValue": "eyJhbGciOiJSUzI1NiIsImtpZCI6IjUzZWFiMDBhNzc5MTk3Yzc0MWQ2NjJmY2EzODE1OGJkN2JlNGEyY2MiLCJ0eXAiOiJKV1QifQ.eyJpc3MiOiJodHRwczovL3NlY3VyZXRva2VuLmdvb2dsZS5jb20vbXlhdXRoYXBwLTJlYWFkIiwiYXVkIjoibXlhdXRoYXBwLTJlYWFkIiwiYXV0aF90aW1lIjoxNzA3NDAxNDE0LCJ1c2VyX2lkIjoiQW1VckRtajRWemdrSUtLNG0xS1FDSkxZamhnMiIsInN1YiI6IkFtVXJEbWo0Vnpna0lLSzRtMUtRQ0pMWWpoZzIiLCJpYXQiOjE3MDc0MDE0MTQsImV4cCI6MTcwNzQwNTAxNCwiZW1haWwiOiJ0ZXN0QGVtYWlsLmNvbSIsImVtYWlsX3ZlcmlmaWVkIjpmYWxzZSwiZmlyZWJhc2UiOnsiaWRlbnRpdGllcyI6eyJlbWFpbCI6WyJ0ZXN0QGVtYWlsLmNvbSJdfSwic2lnbl9pbl9wcm92aWRlciI6InBhc3N3b3JkIn19.f0zu6nYJrH3N84hcCxKSYt7M6v9g63o5tTHHDWITmZffmmw84yGdCvIImQlwU-MKIqe74IBxiFCSuFOMVMXzv7SYBP8FKE7IkWV6pyXhSuaihw-UCHVDgdpvwwx-EH2A5UuYrBOeKyP1Yb4S2Rcmlsv0AsjQ17ZwpB3qeXtck6ilLO0SnZgJrCVTI7H9LrrCOIFkShnYjVRwRWmlnqRMW00QW0PdyoSmDLpOFfdb170s6odNX3oNaOkaT3yLEDjHo3R61Muhn0Qafrg5lkwepFmTFngs7oJUgebw1kVC0mCbKuxeA2wsazFfwznfL7ARcW0Hix13Kt2FK6y7uAwzow",
+    "issuedAt": "2024-02-08T14:10:14Z",
+    "expiresAt": "2024-02-08T15:10:14Z",
+    "headers": {
+      "kid": "53eab00a779197c741d662fca38158bd7be4a2cc",
+      "typ": "JWT",
+      "alg": "RS256"
+    },
+    "claims": {
+      "aud": ["myauthapp-2eaad"],
+      "sub": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+      "email_verified": false,
+      "user_id": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+      "auth_time": 1707401414,
+      "iss": "https://securetoken.google.com/myauthapp-2eaad",
+      "exp": "2024-02-08T15:10:14Z",
+      "firebase": {
+        "identities": {
+          "email": ["test@email.com"]
+        },
+        "sign_in_provider": "password"
+      },
+      "iat": "2024-02-08T14:10:14Z",
+      "email": "test@email.com"
+    },
+    "subject": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+    "id": null,
+    "audience": ["myauthapp-2eaad"],
+    "notBefore": null,
+    "issuer": "https://securetoken.google.com/myauthapp-2eaad"
+  },
+  "name": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+  "tokenAttributes": {
+    "aud": ["myauthapp-2eaad"],
+    "sub": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+    "email_verified": false,
+    "user_id": "AmUrDmj4VzgkIKK4m1KQCJLYjhg2",
+    "auth_time": 1707401414,
+    "iss": "https://securetoken.google.com/myauthapp-2eaad",
+    "exp": "2024-02-08T15:10:14Z",
+    "firebase": {
+      "identities": {
+        "email": ["test@email.com"]
+      },
+      "sign_in_provider": "password"
+    },
+    "iat": "2024-02-08T14:10:14Z",
+    "email": "test@email.com"
+  }
+}
+```
+
+이제 security 에서
+
+`authentication.name` 으로 접근하면, Firebase uid 에 접근 할 수 있습니다.
+
+_예_
+
+```kotlin
+@GetMapping(value = ["/me"])
+fun me(authentication: Authentication): Authentication {
+			authentication.name // my firebase uid
+      return authentication
+}
+```
+
+이제 Firebase Auth 와, 우리 백엔드 통합을 완료했습니다.
+
+즐코딩 하세요
