@@ -36,6 +36,12 @@ export async function generateMetadata({
   return {
     title: post.title,
     description: post.description,
+    metadataBase: new URL("https://tech.cocho.io"),
+    openGraph: {
+      type: "article",
+      title: post.title,
+      description: post.description,
+    },
   };
 }
 
