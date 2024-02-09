@@ -19,6 +19,12 @@ interface RootLayoutProps {
 export default function RootLayout({ children }: RootLayoutProps) {
   return (
     <html lang="ko" suppressHydrationWarning>
+      <head>
+        <meta
+          name="naver-site-verification"
+          content="1c228702dce91feee327f70e2250be0df6f50141"
+        />
+      </head>
       <body
         className={`antialiased min-h-screen bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-50 ${inter.className}`}
       >
