@@ -1,0 +1,22 @@
+---
+title: "Warning: Extra attributes from the server: class,style"
+date: "2024-02-09"
+---
+
+Warning: Extra attributes from the server: class,style
+
+이런 오류가 생기면
+
+`suppressHydrationWarning` 을 추가하면 된다
+
+_/app/layout.tsx_
+
+```tsx
+export default function RootLayout({ children }: RootLayoutProps) {
+  return (
+    <html lang="ko" suppressHydrationWarning>
+      <body>{children}</body>
+    </html>
+  );
+}
+```
