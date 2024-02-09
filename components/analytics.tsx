@@ -16,6 +16,8 @@ const firebaseConfig = {
   measurementId: "G-41FLK6D226",
 };
 
+const isProd = process.env.NODE_ENV === "production";
+
 let analytics: Analytics | null = null;
 
 // Initialize Firebase
@@ -28,7 +30,7 @@ export function Analytics() {
   const pathname = usePathname();
 
   useEffect(() => {
-    if (!analytics) {
+    if (!analytics || !isProd) {
       return;
     }
     logEvent(analytics, "page_view", {
