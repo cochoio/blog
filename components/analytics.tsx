@@ -1,10 +1,10 @@
 "use client";
 
 import { Analytics as VercelAnalytics } from "@vercel/analytics/react";
-import { initializeApp } from "firebase/app";
 import { Analytics, getAnalytics, logEvent } from "firebase/analytics";
+import { initializeApp } from "firebase/app";
+import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { usePathname, useSearchParams } from "next/navigation";
 
 const firebaseConfig = {
   apiKey: "AIzaSyD6fbX3TXCtAdZv9MwoH1ff-s4UOQZvwBM",
@@ -26,15 +26,14 @@ if (typeof window !== "undefined") {
 
 export function Analytics() {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (!analytics) {
       return;
     }
     logEvent(analytics, "page_view", {
-      page_location: window.location.href,
+      page_location: pathname,
     });
-  }, [pathname, searchParams.toString()]);
+  }, [pathname]);
   return <VercelAnalytics />;
 }
