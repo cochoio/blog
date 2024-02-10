@@ -1,0 +1,206 @@
+---
+title: Flutter Flavor 간단하게 쓰자
+description: Flutter Flavor 사용하기
+date: "2024-02-10"
+---
+
+Flutter 의 Flavor 를 간단하게 사용하는 방법을 알아볼께요
+
+## Flavor?
+
+Flavor 는 nodejs 에 `process.env.NODE_ENV` 또는 java spring 의 `profiles` 설정 같은 환경 이라고 볼 수 있어요
+
+이 방법을 사용하면, 무료버전/유료버전 이나, 흔히 웹 프로젝트에서 사용하는 profile 같은 속성을 정의 할 수 있어요.
+
+이번에는 최대한 타 라이브러리는 사용하지 않고, 최대한 간단하게 `flavor` 를 정의 하고, 프로젝트 내에서 `flavor` 이름을 접근하는 방법을 알아볼께요
+
+## 시나리오
+
+현재 Flutter 앱과 통신하는 API 서버가 도메인이 두개로 나누어져 있다고 설정 해 볼께요
+
+환경은 현재 production 환경에서 구동되고 있는 `real` 환경,
+
+테스트 및 개발중인 `stage` 환경 두개로 나누었어요
+
+`real` 서버의 도메인은 `https://api.example.com` 이고
+
+`stage` 서버의 도메인은 `https://stage.example.com` 이라고 가정 할께요
+
+## Android
+
+Android 에서 Flavor 를 설정하려면 아래 설정 가이드를 따라주세요
+
+_android/app/build.gradle_
+
+```groovy
+android {
+    // other config....
+
+    // 적용 할 Flavor 그룹 이름이에요
+    // 어떤이름이든 상관없어요
+    flavorDimensions "default"
+
+    // Flavor 설정을 시작합니다
+    // 여기서는 stage 와 real 이라는 이름으로 정의 했어요
+    productFlavors {
+        // stage 설정
+        stage {
+            // flavorDimensions 에 정의한 flavor 그룹 이름이에요
+            dimension "default"
+
+            // 디바이스에 설치 될 이름은 MyApp.stage 라고 합니다
+            resValue "string", "app_name", "MyApp.stage"
+
+            // applicationId 가 동일하면, 동일한 앱이 덮어써지기 때문에, suffix 로 .stage 라고 넣어줄꼐요
+            // 예를들어, io.cocho.myapp 이 원래 applicationId 라면, io.cocho.myapp.stage 라고 만들어지게 되요
+            applicationIdSuffix ".stage"
+
+            // 이 Flavor 의 minSdk 를 설정합니다
+            minSdkVersion 28
+        }
+
+        // real 설정
+        real {
+            // flavorDimensions 에 정의한 flavor 그룹 이름이에요
+            dimension "default"
+            // 디바이스에 설치 될 이름은 MyApp 라고 합니다
+            resValue "string", "app_name", "MyApp"
+            applicationIdSuffix ""
+            minSdkVersion 28
+        }
+    }
+
+    // other config...
+}
+
+```
+
+이제 애플리케이션 이름을 구분 할 수 있도록, 설정 해 줄께요
+
+`menifest.application` 속성의 `android:label` 을 아래처럼 바꿔주세요
+
+```xml
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application
+        android:label="@string/app_name"
+        android:name="${applicationName}"
+        android:icon="@mipmap/ic_launcher">
+        <!-- ...other config -->
+    </application>
+</manifest>
+
+```
+
+## IOS
+
+IOS 설정은 Android 보다 조금 복잡해요 천천히 알려드릴께요
+
+먼저 idea ios/Runner.xcworkspace 파일을 xcode 로 열어주세요 (또는 idea 에서 ios 프로젝트를 열어주세요)
+
+PROJECT > Runner 의 Configurations 섹션에서 Debug 와 Release 를 `real` 과 `stage` 하나씩 각각 복제할께요
+
+![](/flutter-simple-flavor-sc1.png)
+
+아래는 결과화면 이에요
+
+![](/flutter-simple-flavor-sc2.png)
+
+이제 Android 처럼 패키지 이름을 변형시킬꺼에요
+
+TARGETS > Runner > Build Settings 에서 `product` 라고 검색 해 보면 `Packaging` 항목에 `Product Bundle Identifier` 항목 을 펼치고
+
+`Debug-stage` 와 `Release-stage` 의 패키지 이름 끝에 `.stage` 라고 추가 해 줄께요
+
+아래는 결과화면 이에요
+
+![](/flutter-simple-flavor-sc3.png)
+
+이제 다시 좌측 상단에 더하기 (`+`) > `Add User-Defined Setting` 을 누르면 `User-Defined` 항목에 `NEW_SETTING` 이 추가되는 것을 볼 수 있을꺼에요.
+
+이 값을 `APP_NAME` 으로 바꾸고 `real` 과 `stage` 의 앱 이름을 구분 할 수 있게 변경 해 줄께요
+
+아래는 결과화면 이에요
+
+![](/flutter-simple-flavor-sc4.png)
+
+이제 앱 이름을 `User-Defined` 에 설정 한 `APP_NAME` 으로 변경할께요
+
+_ios/Runner/Info.plist_
+
+```xml
+<key>CFBundleDisplayName</key>
+<string>$(APP_NAME)</string>
+```
+
+이제 마지막이에요 Flavor 이름을 정의할꺼에요
+
+Xcode > Product > Scheme > Manage Scheme 를 눌러주세요
+
+그 다음, Runner 라고 되어있는 원본 Scheme 를 선택 후, 좌측 하단에 점3 개를 누른 후 Duplicate 를 눌러주세요
+
+![](/flutter-simple-flavor-sc5.png)
+
+그 다음, 이름을 `real` 이라고 지어줄께요
+
+![](/flutter-simple-flavor-sc6.png)
+
+동일한 방법으로 `stage` 이름의 Scheme 를 만들어 주세요
+
+아래는 결과화면 이에요
+
+![](/flutter-simple-flavor-sc7.png)
+
+이제 `stage` 이름의 Scheme 를 선택 후, 좌측하단에 `Edit` 을 누르고 `real` 이름의 빌드 설정들을 `stage` 로 바꿔주세요
+
+`Debug-real` 은 `Debug-stage` 로, `Release-real` 은 `Release-stage` 로 바꿔주세요
+
+![](/flutter-simple-flavor-sc8.png)
+
+이제 모든 설정은 다 끝났어요
+
+## Flutter
+
+이제 Flutter 를 실행 할 때, `--flavor` 옵션으로 빌드를 변형 시킬 수 있어요
+
+```shell
+flutter run --flavor stage
+flutter build --flavor stage
+
+flutter run --flavor real
+flutter build --flavor real
+```
+
+Flutter 에서 flavor 이름은 아래처럼 접근 할 수 있어요
+
+```dart
+import 'package:flutter/services.dart';
+
+print("$appFlavor"); // stage or real
+```
+
+_각각 Flavor 이름을 가져 온 모습_
+
+<table>
+  <thead>
+    <tr>
+      <th>Android stage</th>
+      <th>Android real</th>
+      <th>iOS stage</th>
+      <th>iOS real</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>![](/flutter-simple-flavor-sc-aos-flavor-stage.png)</td>
+      <td>![](/flutter-simple-flavor-sc-aos-flavor-real.png)</td>
+      <td>![](/flutter-simple-flavor-sc-ios-flavor-stage.png)</td>
+      <td>![](/flutter-simple-flavor-sc-ios-flavor-real.png)</td>
+    </tr>
+  </tbody>
+</table>
+
+## 마무리
+
+프로젝트 내부에서 Flavor 이름으로 접근하면, 별도로 빌드하고 쉽게 테스트하고 안전하게 배포 할 수 있겠죠?
+
+전체 코드는 [examples/flutter_simple_flavor](https://github.com/cochoio/tech.cocho.io/tree/main/examples/flutter_simple_flavor) 이곳에서 확인 해 보세요!
