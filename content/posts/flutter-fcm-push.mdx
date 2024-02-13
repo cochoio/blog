@@ -1,0 +1,111 @@
+---
+title: Flutter firebase (FCM) 연동하기
+description: Flutter 와 푸시를 연동 해 봐요
+date: "2024-02-13"
+---
+
+# 사전준비
+
+1. Firebase 프로젝트를 생성합니다. - 생성 후, 프로젝트 개요 톱니바퀴 > 일반 탭 > [프로젝트 ID] 를 기억 해 둡니다
+
+![](https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2FbKnoUb%2Fbtsph95vm2z%2FVdAVKKNNBxijQ33VtYs1sk%2Fimg.png)
+
+2. Flutter 프로젝트를 준비합니다.
+
+3. Flutterfire Cli 도구를 준비합니다 (https://firebase.flutter.dev/docs/cli)
+
+```shell
+# Flutterfire 홈페이지에서 긁어왔습니다
+
+npm install -g firebase-tools
+dart pub global activate flutterfire_cli
+```
+
+4. Flutter 프로젝트를 생성합니다.
+
+5. Project Root 에 `.firebaserc` 파일을 생성합니다.
+
+_.firebaserc_
+
+```json
+{
+  "projects": {
+    "default": "<1 항목에서 기억 해 둔 프로젝트 ID>"
+  }
+}
+```
+
+6. Flutter 프로젝트 Root 에서 아래 명령어를 실행합니다.
+
+```shell
+flutterfire configure
+```
+
+![](https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2FDgyQu%2Fbtso6MLEZC8%2FpTgbKdulValAoebbypANNK%2Fimg.png)
+
+7. `firebase_core` `firebase_messaging` 2개 디펜던시를 설치 해 줍니다
+
+```shell
+dart pub add firebase_core firebase_messaging
+```
+
+[firebase_core](https://pub.dev/packages/firebase_core)
+
+[firebase_messaging](https://pub.dev/packages/firebase_messaging)
+
+8. `main.dart` 파일에서 main 함수를 다음과 같이 작성합니다
+
+```dart
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp();
+
+  runApp(const MyApp());
+}
+```
+
+다음 코드로 token 을 가져 올 수 있습니다.
+
+```dart
+final fcmToken = await FirebaseMessaging.instance.getToken();
+```
+
+# Android 푸시 연동
+
+별도로 설정 할 게 없습니다..
+
+# iOS 푸시 연동
+
+1. [애플 개발자센터](https://developer.apple.com/) 에서 [Account] > [인증서, 식별자 및 프로파일] 항목 > [키] 로 들어갑니다.
+
+[바로가기](https://developer.apple.com/account/resources/authkeys/list)
+
+2. 더하기 (+) 를 누르고 아래 항목을 체크하고 키를 만듭니다
+
+![](https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2FyHkzV%2Fbtso6SZnX6x%2FNZvRkfkgw10qyfejvwdJqk%2Fimg.png)
+
+![](https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2FcT16Kj%2Fbtspg0VaCM1%2F3RoFlfLRzyFksOBan66Zt1%2Fimg.png)
+
+[Key ID] 항목을 기억합니다.
+
+> 중요! 여기서 만든 키는 제한이 잇으니, 안전한 곳에 항상 영구적으로 보관하세요!
+
+3. Firebase 프로젝트로 들어가서 APN 다운받은 키를 업로드 합니다
+
+[프로젝트 개요 옆 톱니바퀴] > [클라우드 메시징 탭] > [Apple 앱 구성] 항목 > [APN 인증 키 업로드]
+
+![](https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2FchWf0z%2FbtspdXSyY9q%2FMMzOLA0hq0zBb0R6DKAbN1%2Fimg.png)
+
+키 ID 는 이전단계의 `[Key ID]` 항목을 넣으시면 됩니다. (또는 다운받은 키 파일의 뒤에 숫자및 알파벳)
+
+팀 ID 는 애플 개발자센터의 `[팀 ID]` 항목에서 넣으시면 됩니다. (하단 이미지 참조)
+
+![](https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2FbNf7cU%2Fbtso93sfiGS%2F4KnvPYLDIPeJNHkRy2aMi1%2Fimg.png)
+
+4. 프로젝트로 돌아와서, xcode 로 ios 프로젝트를 열거나, ios/Runner.xcworkspace 파일을 실행합니다.
+
+5. Runner > Targets [Runner] > Signing & Capabilities > + Capability 클릭 > Push Notification 을 검색 후 추가합니다.
+
+![](https://img1.daumcdn.net/thumb/R1280x0/?scode=mtistory2&fname=https%3A%2F%2Fblog.kakaocdn.net%2Fdn%2FlzL70%2FbtspflrQScm%2FsLMIXFiNqGOkKlj9DSedEk%2Fimg.png)
+
+끝!
